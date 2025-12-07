@@ -14,11 +14,15 @@ def _make_serializable(data):
         return data.isoformat()
     return data
 
-async def get_all_message_ids(chat_id: int):
-    """Iterates through all messages in a chat and returns a dictionary of message IDs to file names."""
+async def get_all_message_ids(chat_id: int, limit: int = None):
+    """
+    Iterates through messages in a chat and returns a dictionary of message IDs to file names.
+    The 'limit' parameter specifies the maximum number of messages to retrieve.
+    Messages are returned in reverse chronological order (newest first).
+    """
     await ensure_client_started()
     message_files = {}
-    async for msg in telethon_client.iter_messages(chat_id, limit=None):
+    async for msg in telethon_client.iter_messages(chat_id, limit=limit):
         if msg.file and hasattr(msg.file, 'name'):
             message_files[msg.id] = msg.file.name
     return message_files
