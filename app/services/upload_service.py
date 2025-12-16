@@ -1,10 +1,11 @@
 import os
-import uuid
 import asyncio
+from fastapi import UploadFile
 from telethon.errors import (
     FloodWaitError,
     RPCError
 )
+from app.config.settings import SAVE_BASE
 # Python built-in connection error
 from asyncio import TimeoutError
 from aiohttp import ClientConnectionError
@@ -105,30 +106,55 @@ async def _perform_upload(upload_id: str, chat_id: int, file_path: str, caption:
                     os.remove(path)
 
 
-async def upload_using_file_path(chat_id: int, file_path: str, caption: str = None, thumb: str = None, cleanup_paths: list = None, upload_id: str = None):
-    # upload_id = uuid.uuid4().hex[:10]
-    file_name = os.path.basename(file_path)
+async def upload_file_stream(chat_id: int, file: UploadFile, caption: str = None):
+    import uuid, os, asyncio
+
+    upload_id = uuid.uuid4().hex[:10]
+    original_name = os.path.basename(file.filename)
 
     _upload_progress[upload_id] = {
         "status": "uploading",
         "percent": 0,
         "message_id": None,
-        "file_name": file_name
+        "file_name": original_name
     }
+
+    uploads_dir = os.path.join(SAVE_BASE, "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+
+    temp_path = os.path.join(uploads_dir, f"{upload_id}_{original_name}")
+
+    try:
+        # Stream upload to disk (chunked)
+        with open(temp_path, "wb") as f:
+            while True:
+                chunk = await file.read(4 * 1024 * 1024)  # 4MB
+                if not chunk:
+                    break
+                f.write(chunk)
+
+    except Exception as e:
+        _upload_progress[upload_id]["status"] = "error"
+        _upload_progress[upload_id]["error"] = str(e)
+        return {
+            "status": "error",
+            "upload_id": upload_id,
+            "file_name": original_name
+        }
 
     asyncio.create_task(
         _perform_upload(
             upload_id=upload_id,
             chat_id=chat_id,
-            file_path=file_path,
+            file_path=temp_path,
             caption=caption,
-            thumb=thumb,
-            cleanup_paths=cleanup_paths
+            thumb=None,
+            cleanup_paths=[temp_path]  # ✅ easy cleanup
         )
     )
 
     return {
         "status": "started",
         "upload_id": upload_id,
-        "file_name": file_name
+        "file_name": original_name
     }
