@@ -10,7 +10,7 @@ async def get_progress(upload_id: str):
         raise HTTPException(status_code=404, detail="Upload ID not found")
     return progress
 
-@router.post("/upload_stream")
+@router.post("/upload")
 async def upload_stream(
     chat_id: int = Form(...),
     caption: str = Form(None),
