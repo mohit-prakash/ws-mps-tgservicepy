@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  telethon-service:
+    build: .
+    container_name: telethon-service
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "9000:9000"
+
+    volumes:
+      # 🔹 Telethon session (VERY IMPORTANT)
+      - /Users/mohitprakash/.telegram-cloud:/telegram-session
+
+      # 🔹 Where uploaded / temp files are stored
+      - /Users/mohitprakash/telethonAPI:/data
+
+    environment:
+      # Map HOST paths to CONTAINER paths
+      SESSION_PATH: /telegram-session/MohitCloud.session
+      SAVE_BASE: /data
+
+    deploy:
+      resources:
+        limits:
+          memory: 6g

@@ -1,6 +1,6 @@
-telethon
-fastapi
-uvicorn
-python-dotenv
-python-multipart
-aio-http
+fastapi==0.125.0
+uvicorn==0.38.0
+telethon==1.42.0
+python-dotenv==1.2.1
+python-multipart==0.0.21
+aiohttp==3.13.2
