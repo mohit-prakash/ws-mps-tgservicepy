@@ -42,17 +42,37 @@ async def _perform_upload(upload_id: str, chat_id: int, file_path: str, caption:
             _upload_progress[upload_id]["error"] = "Thumbnail not found"
             return
 
+        # Detect image and size; if image >10MB, send as document (Telegram limitation)
+        file_size = os.path.getsize(file_path)
+        is_image = False
+        try:
+            from PIL import Image
+            try:
+                Image.open(file_path).verify()
+                is_image = True
+            except Exception:
+                is_image = False
+        except Exception:
+            import imghdr
+            is_image = imghdr.what(file_path) is not None
+
+        force_document = False
+        if is_image and file_size > 10 * 1024 * 1024:
+            force_document = True
+
+        send_thumb = None if force_document else thumb
+
         retries = 0
 
         while retries <= MAX_RETRIES:
-
             try:
-                # Attempt upload
+                # Attempt upload; for large images send as document
                 result = await telethon_client.send_file(
                     chat_id,
                     file_path,
                     caption=caption,
-                    thumb=thumb,
+                    thumb=send_thumb,
+                    force_document=force_document,
                     supports_streaming=True,
                     progress_callback=progress_callback
                 )
@@ -67,21 +87,16 @@ async def _perform_upload(upload_id: str, chat_id: int, file_path: str, caption:
                 return
 
             except FloodWaitError as fw:
-                # Telegram rate-limit error
                 wait_time = fw.seconds
                 _upload_progress[upload_id]["status"] = "retrying"
                 _upload_progress[upload_id]["error"] = f"FloodWait: waiting {wait_time}s"
-
                 await asyncio.sleep(wait_time)
                 retries += 1
 
-
             except (ClientConnectionError, TimeoutError, RPCError) as e:
-                # Retryable network errors
                 if retries < MAX_RETRIES:
                     _upload_progress[upload_id]["status"] = "retrying"
                     _upload_progress[upload_id]["error"] = f"Retry {retries + 1}/{MAX_RETRIES}"
-
                     await asyncio.sleep(RETRY_DELAY)
                     retries += 1
                     continue
@@ -89,10 +104,8 @@ async def _perform_upload(upload_id: str, chat_id: int, file_path: str, caption:
                     raise e
 
             except Exception as e:
-                # Non-retryable or last retry failed
                 raise e
 
-        # If reached here: failed after all retries
         _upload_progress[upload_id]["status"] = "error"
         _upload_progress[upload_id]["error"] = f"Upload failed after {MAX_RETRIES} retries"
 
