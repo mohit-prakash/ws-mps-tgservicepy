@@ -14,18 +14,93 @@ def _make_serializable(data):
         return data.isoformat()
     return data
 
-async def get_all_message_ids(chat_id: int, limit: int = None):
-    """
-    Iterates through messages in a chat and returns a dictionary of message IDs to file names.
-    The 'limit' parameter specifies the maximum number of messages to retrieve.
-    Messages are returned in reverse chronological order (newest first).
-    """
+async def get_all_message_metadata(
+    chat_id: int,
+    after_message_id: int | None = None
+):
     await ensure_client_started()
-    message_files = {}
-    async for msg in telethon_client.iter_messages(chat_id, limit=limit):
-        if msg.file and hasattr(msg.file, 'name'):
-            message_files[msg.id] = msg.file.name
-    return message_files
+
+    messages = []
+
+    async for msg in telethon_client.iter_messages(
+        chat_id,
+        min_id=after_message_id,
+        reverse=True
+    ):
+        if not msg.file:
+            continue
+
+        mime_type = msg.file.mime_type or ""
+        file_name = msg.file.name
+        file_size = msg.file.size
+
+        # Determine media type
+        if mime_type.startswith("image/"):
+            media_type = "Photo"
+        elif mime_type.startswith("video/"):
+            media_type = "Video"
+        else:
+            media_type = "File"
+
+        width = height = duration = None
+
+        # 1️⃣ Primary extraction (fast path)
+        if msg.photo and msg.photo.sizes:
+            largest = msg.photo.sizes[-1]
+            width = largest.w
+            height = largest.h
+
+        if msg.video:
+            duration = msg.video.duration
+            width = msg.video.w
+            height = msg.video.h
+
+        # 2️⃣ Fallback to document attributes (your requirement)
+        if (width is None or height is None or duration is None) and msg.media:
+            doc = getattr(msg.media, "document", None)
+            doc_w, doc_h, doc_dur = _extract_doc_attributes(doc)
+
+            width = width or doc_w
+            height = height or doc_h
+            duration = duration or doc_dur
+
+        messages.append({
+            "chat_id": chat_id,
+            "message_id": msg.id,
+            "message_type": media_type,
+            "caption": msg.text,
+            "message_date": msg.date.isoformat() if msg.date else None,
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "file_size": file_size,
+            "media_type": media_type,
+            "duration": duration,
+            "width": width,
+            "height": height
+        })
+
+    return messages
+
+def _extract_doc_attributes(document):
+    width = height = duration = None
+
+    if not document or not document.attributes:
+        return width, height, duration
+
+    for attr in document.attributes:
+        attr_type = attr.__class__.__name__
+
+        if attr_type == "DocumentAttributeImageSize":
+            width = attr.w
+            height = attr.h
+
+        elif attr_type == "DocumentAttributeVideo":
+            duration = attr.duration
+            # width/height may also exist here
+            width = width or attr.w
+            height = height or attr.h
+
+    return width, height, duration
 
 async def get_msg(chat_id: int, message_id: int):
     """Gets a specific message from a chat by its ID and returns it as a serializable dictionary."""
