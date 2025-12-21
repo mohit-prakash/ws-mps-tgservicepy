@@ -9,6 +9,8 @@ from app.config.settings import SAVE_BASE
 # Python built-in connection error
 from asyncio import TimeoutError
 from aiohttp import ClientConnectionError
+
+from app.services.message_service import extract_message_metadata
 from app.telegram_client.client import telethon_client, ensure_client_started
 
 # In-memory upload tracker
@@ -81,9 +83,16 @@ async def _perform_upload(upload_id: str, chat_id: int, file_path: str, caption:
                 msg = result[0] if isinstance(result, (list, tuple)) else result
                 message_id = getattr(msg, "id", None)
 
-                _upload_progress[upload_id]["status"] = "completed"
-                _upload_progress[upload_id]["percent"] = 100
-                _upload_progress[upload_id]["message_id"] = message_id
+                # Base metadata (existing logic)
+                metadata = extract_message_metadata(msg, chat_id)
+
+                _upload_progress[upload_id].update({
+                    "status": "completed",
+                    "percent": 100,
+                    "message_id": message_id,
+                    "metadata": metadata
+                })
+
                 return
 
             except FloodWaitError as fw:
