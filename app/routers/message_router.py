@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.services.message_service import get_all_message_metadata, get_msg
+from app.services.message_service import get_all_message_metadata, get_msg, get_msg_metadata
 
 router = APIRouter()
 
@@ -23,3 +23,14 @@ async def get_message_ids(
 async def get_message(chat_id: int, message_id: int):
     message = await get_msg(chat_id, message_id)
     return {"chat_id": chat_id, "message": message}
+
+@router.get("/get_message_metadata")
+async def get_msg_metadata_api(
+    chat_id: int,
+    message_id: int,
+):
+    data = await get_msg_metadata(chat_id, message_id)
+    return {
+        "chat_id": chat_id,
+        "message": data
+    }

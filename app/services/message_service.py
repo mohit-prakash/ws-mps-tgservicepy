@@ -55,72 +55,88 @@ def extract_width_height(msg):
 
     return None, None
 
+def extract_message_metadata(msg, chat_id: int):
+    if not msg or not msg.media or not msg.file:
+        return None
+
+    mime_type = msg.file.mime_type
+    if not mime_type:
+        return None
+
+    if mime_type.startswith("image/"):
+        media_type = "Photo"
+    elif mime_type.startswith("video/"):
+        media_type = "Video"
+    else:
+        return None
+
+    width, height = extract_width_height(msg)
+    duration = extract_duration(msg) if media_type == "Video" else None
+
+    return {
+        "chat_id": chat_id,
+        "message_id": msg.id,
+        "message_type": media_type,
+        "media_type": media_type,
+        "caption": msg.text or None,
+        "message_date": msg.date.isoformat() if msg.date else None,
+        "file_name": msg.file.name,
+        "mime_type": mime_type,
+        "file_size": msg.file.size,
+        "duration": duration,
+        "width": width,
+        "height": height,
+    }
 
 async def get_all_message_metadata(
     chat_id: int,
     after_message_id: Optional[int] = None,
-) -> List[Dict]:
-    """
-    Fetch message metadata for all media messages in a chat.
-
-    If after_message_id is provided, only messages with id > after_message_id
-    are returned. Otherwise, all messages are processed.
-    """
+):
     await ensure_client_started()
 
-    results: List[Dict] = []
+    results = []
 
     async for msg in telethon_client.iter_messages(chat_id):
         try:
-            # Skip older messages if after_message_id is provided
             if after_message_id and msg.id <= after_message_id:
                 break
 
-            if not msg.media or not msg.file:
-                continue
-
-            mime_type = msg.file.mime_type
-            file_name = msg.file.name
-            file_size = msg.file.size
-
-            if not mime_type:
-                continue
-
-            # Detect media type
-            if mime_type.startswith("image/"):
-                media_type = "Photo"
-            elif mime_type.startswith("video/"):
-                media_type = "Video"
-            else:
-                continue
-
-            # Extract optional fields
-            width, height = extract_width_height(msg)
-            duration = extract_duration(msg) if media_type == "Video" else None
-
-            results.append({
-                "chat_id": chat_id,
-                "message_id": msg.id,
-                "message_type": media_type,
-                "media_type": media_type,
-                "caption": msg.text or None,
-                "message_date": msg.date.isoformat() if msg.date else None,
-                "file_name": file_name,
-                "mime_type": mime_type,
-                "file_size": file_size,
-                "duration": duration,
-                "width": width,
-                "height": height,
-            })
+            metadata = extract_message_metadata(msg, chat_id)
+            if metadata:
+                results.append(metadata)
 
         except Exception as e:
-            # IMPORTANT: never crash batch processing
             logger.error(
                 f"Failed to process message_id={msg.id} chat_id={chat_id}: {e}",
                 exc_info=True
             )
 
     return results
+
+async def get_msg_metadata(
+    chat_id: int,
+    message_id: int,
+) -> Optional[dict]:
+    await ensure_client_started()
+
+    try:
+        msg = await telethon_client.get_messages(
+            entity=chat_id,
+            ids=message_id
+        )
+
+        if not msg:
+            return None
+
+        return extract_message_metadata(msg, chat_id)
+
+    except Exception as e:
+        logger.error(
+            f"Failed to fetch message metadata "
+            f"chat_id={chat_id} message_id={message_id}: {e}",
+            exc_info=True
+        )
+        return None
 
 async def get_msg(chat_id: int, message_id: int):
     """Gets a specific message from a chat by its ID and returns it as a serializable dictionary."""
